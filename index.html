@@ -1,0 +1,2023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #333;
+            background-color: #fff;
+        }
+        .score-container {
+            margin-top: 20px;
+            font-size: 24px;
+        }
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            margin: 0 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Snake Game</h1>
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <div class="score-container">Score: <span id="score">0</span></div>
+    <div class="controls">
+        <button id="startButton">Start Game</button>
+        <button id="resetButton">Reset Game</button>
+    </div>
+    <p>Use arrow keys to control the snake</p>
+    
+    <!-- Audio elements for sound effects (hidden) -->
+    <audio id="portalSound" preload="auto">
+        <source src="assets/55843__sergenious__port.wav" type="audio/wav">
+    </audio>
+    <audio id="deathSound" preload="auto">
+        <source src="assets/642180__n0iz__horror-scary-eyeball-squeeze-squish.wav" type="audio/wav">
+    </audio>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const scoreElement = document.getElementById('score');
+            const startButton = document.getElementById('startButton');
+            const resetButton = document.getElementById('resetButton');
+            
+            // Get audio elements
+            const portalSound = document.getElementById('portalSound');
+            const deathSound = document.getElementById('deathSound');
+            
+            // Function to play sounds
+            function playPortalSound() {
+                portalSound.currentTime = 0;
+                portalSound.play();
+            }
+            
+            function playDeathSound() {
+                deathSound.currentTime = 0;
+                deathSound.play();
+            }
+            
+            // Game settings
+            const boxSize = 20;
+            const canvasSize = 400;
+            const gridSize = canvasSize / boxSize;
+            
+            // Game variables
+            let snake = [];
+            let direction = 'right';
+            let food = {};
+            let score = 0;
+            let gameInterval;
+            let gameSpeed = 150; // milliseconds
+            let gameRunning = false;
+            let deathAnimation = false;
+            let deathAnimationFrames = 0;
+            let maxDeathAnimationFrames = 60; // Increased from 20 to 60 for slower animation
+            
+            // Portal variables
+            let portals = [];
+            let portalSize = boxSize;
+            let portalMoveInterval;
+            let portalFlashInterval;
+            let isPortalFlashing = false;
+            let portalFlashCount = 0;
+            const maxPortalFlashCount = 6; // Flash 3 times (on-off-on-off-on-off)
+            let portalColors = ['#3498db', '#9b59b6']; // Blue and purple
+            let portalFlashColor = '#e74c3c'; // Red
+            
+            // AI snake variables
+            let aiSnake = [];
+            let aiDirection = 'left';
+            let aiScore = 0;
+            let aiDifficulty = 0.7; // Value between 0 and 1, higher means smarter AI
+            let aiDeathAnimation = false;
+            let aiDeathAnimationFrames = 0;
+            
+            // Friendly AI snakes (split from player)
+            let friendlySnakes = [];
+            let friendlyDirections = [];
+            let friendlyDeathAnimations = [];
+            let friendlyDeathAnimationFrames = [];
+            
+            // Enemy AI snakes (split from original AI)
+            let enemySnakes = [];
+            let enemyDirections = [];
+            let enemyDeathAnimations = [];
+            let enemyDeathAnimationFrames = [];
+            
+            // Minimum length required for splitting
+            const minSplitLength = 10;
+            
+            // Initialize game
+            function initGame() {
+                // Reset game state
+                clearInterval(gameInterval);
+                clearInterval(portalMoveInterval);
+                clearInterval(portalFlashInterval);
+                
+                snake = [
+                    {x: 5, y: 10},
+                    {x: 4, y: 10},
+                    {x: 3, y: 10}
+                ];
+                direction = 'right';
+                score = 0;
+                scoreElement.textContent = score;
+                gameRunning = false;
+                
+                // Initialize AI snake on the opposite side
+                aiSnake = [
+                    {x: gridSize - 6, y: 10},
+                    {x: gridSize - 5, y: 10},
+                    {x: gridSize - 4, y: 10}
+                ];
+                aiDirection = 'left';
+                aiScore = 0;
+                aiDeathAnimation = false;
+                aiDeathAnimationFrames = 0;
+                
+                // Reset all split snakes
+                friendlySnakes = [];
+                friendlyDirections = [];
+                friendlyDeathAnimations = [];
+                friendlyDeathAnimationFrames = [];
+                
+                enemySnakes = [];
+                enemyDirections = [];
+                enemyDeathAnimations = [];
+                enemyDeathAnimationFrames = [];
+                
+                // Create initial portals
+                createPortals();
+                
+                // Set portal movement interval
+                portalMoveInterval = setInterval(() => {
+                    if (gameRunning) {
+                        startPortalFlashing();
+                    }
+                }, 10000); // Move portals every 10 seconds
+                
+                // Draw initial state
+                drawCanvas();
+                drawSnake();
+                drawAiSnake();
+                drawPortals();
+                createFood();
+                
+                // Clear previous event listeners to avoid duplicates
+                document.removeEventListener('keydown', handleKeyPress);
+                document.addEventListener('keydown', handleKeyPress);
+            }
+            
+            // Start game
+            function startGame() {
+                if (!gameRunning) {
+                    gameRunning = true;
+                    gameInterval = setInterval(gameLoop, gameSpeed);
+                    startButton.textContent = 'Pause Game';
+                } else {
+                    gameRunning = false;
+                    clearInterval(gameInterval);
+                    startButton.textContent = 'Resume Game';
+                }
+            }
+            
+            // Game loop
+            function gameLoop() {
+                if (!aiDeathAnimation) {
+                    updateAiSnake();
+                }
+                
+                updateSnake();
+                
+                // Update all friendly AI snakes
+                for (let i = 0; i < friendlySnakes.length; i++) {
+                    if (!friendlyDeathAnimations[i]) {
+                        updateFriendlySnake(i);
+                    }
+                }
+                
+                // Update all enemy AI snakes
+                for (let i = 0; i < enemySnakes.length; i++) {
+                    if (!enemyDeathAnimations[i]) {
+                        updateEnemySnake(i);
+                    }
+                }
+                
+                checkCollisions();
+                
+                drawCanvas();
+                drawPortals();
+                drawFood();
+                
+                // Draw all friendly AI snakes
+                for (let i = 0; i < friendlySnakes.length; i++) {
+                    if (!friendlyDeathAnimations[i]) {
+                        drawFriendlySnake(i);
+                    } else {
+                        animateFriendlyDeath(i);
+                    }
+                }
+                
+                // Draw all enemy AI snakes
+                for (let i = 0; i < enemySnakes.length; i++) {
+                    if (!enemyDeathAnimations[i]) {
+                        drawEnemySnake(i);
+                    } else {
+                        animateEnemyDeath(i);
+                    }
+                }
+                
+                if (!aiDeathAnimation) {
+                    drawAiSnake();
+                } else {
+                    animateAiDeath();
+                }
+                
+                drawSnake();
+            }
+            
+            // Handle key presses
+            function handleKeyPress(event) {
+                const key = event.key;
+                
+                // Prevent default behavior for arrow keys to avoid page scrolling
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
+                    event.preventDefault();
+                }
+                
+                switch (key) {
+                    case 'ArrowUp':
+                        if (direction !== 'down') direction = 'up';
+                        break;
+                    case 'ArrowDown':
+                        if (direction !== 'up') direction = 'down';
+                        break;
+                    case 'ArrowLeft':
+                        if (direction !== 'right') direction = 'left';
+                        break;
+                    case 'ArrowRight':
+                        if (direction !== 'left') direction = 'right';
+                        break;
+                }
+            }
+            
+            // Update snake position
+            function updateSnake() {
+                const head = {...snake[0]};
+                
+                switch (direction) {
+                    case 'up':
+                        head.y -= 1;
+                        break;
+                    case 'down':
+                        head.y += 1;
+                        break;
+                    case 'left':
+                        head.x -= 1;
+                        break;
+                    case 'right':
+                        head.x += 1;
+                        break;
+                }
+                
+                // Check for portal teleportation
+                const portalIndex = checkPortalCollision(head);
+                if (portalIndex !== -1) {
+                    // Play portal sound
+                    playPortalSound();
+                    
+                    // Teleport to the other portal
+                    const exitPortalIndex = portalIndex === 0 ? 1 : 0;
+                    head.x = portals[exitPortalIndex].x;
+                    head.y = portals[exitPortalIndex].y;
+                    
+                    // Move one step in current direction to avoid getting stuck in portal
+                    switch (direction) {
+                        case 'up':
+                            head.y -= 1;
+                            break;
+                        case 'down':
+                            head.y += 1;
+                            break;
+                        case 'left':
+                            head.x -= 1;
+                            break;
+                        case 'right':
+                            head.x += 1;
+                            break;
+                    }
+                }
+                
+                snake.unshift(head);
+                
+                // Check if snake eats food
+                if (head.x === food.x && head.y === food.y) {
+                    // Increase score
+                    score += 10;
+                    scoreElement.textContent = score;
+                    
+                    // Increase speed slightly every 50 points
+                    if (score % 50 === 0) {
+                        clearInterval(gameInterval);
+                        gameSpeed = Math.max(50, gameSpeed - 10);
+                        gameInterval = setInterval(gameLoop, gameSpeed);
+                    }
+                    
+                    // Create new food
+                    createFood();
+                    
+                    // Check if snake is long enough to split
+                    if (snake.length >= minSplitLength) {
+                        splitPlayerSnake();
+                    }
+                } else {
+                    // Remove tail if no food eaten
+                    snake.pop();
+                }
+            }
+            
+            // Split player snake into two - player keeps front half, new friendly AI gets back half
+            function splitPlayerSnake() {
+                const halfLength = Math.floor(snake.length / 2);
+                
+                // Create a new friendly snake from the back half
+                const newSnake = snake.slice(halfLength);
+                
+                // Determine direction for the new snake
+                // Choose a direction perpendicular to current player direction
+                let newDirection;
+                if (direction === 'up' || direction === 'down') {
+                    newDirection = Math.random() < 0.5 ? 'left' : 'right';
+                } else {
+                    newDirection = Math.random() < 0.5 ? 'up' : 'down';
+                }
+                
+                // Add to friendly snakes array
+                friendlySnakes.push(newSnake);
+                friendlyDirections.push(newDirection);
+                friendlyDeathAnimations.push(false);
+                friendlyDeathAnimationFrames.push(0);
+                
+                // Player keeps front half
+                snake = snake.slice(0, halfLength);
+            }
+            
+            // Check for collisions
+            function checkCollisions() {
+                // Player snake collisions
+                const playerHead = snake[0];
+                
+                // Check if player snake hit the wall
+                if (playerHead.x < 0 || playerHead.x >= gridSize || playerHead.y < 0 || playerHead.y >= gridSize) {
+                    endGame();
+                    return;
+                }
+                
+                // Check if player snake hit itself
+                for (let i = 1; i < snake.length; i++) {
+                    if (playerHead.x === snake[i].x && playerHead.y === snake[i].y) {
+                        endGame();
+                        return;
+                    }
+                }
+                
+                // AI snake collisions
+                if (!aiDeathAnimation) {
+                    const aiHead = aiSnake[0];
+                    
+                    // Check if AI snake hit the wall
+                    if (aiHead.x < 0 || aiHead.x >= gridSize || aiHead.y < 0 || aiHead.y >= gridSize) {
+                        startAiDeathAnimation();
+                        return;
+                    }
+                    
+                    // Check if AI snake hit itself
+                    for (let i = 1; i < aiSnake.length; i++) {
+                        if (aiHead.x === aiSnake[i].x && aiHead.y === aiSnake[i].y) {
+                            startAiDeathAnimation();
+                            return;
+                        }
+                    }
+                    
+                    // Check if AI snake hit player snake body
+                    for (let i = 1; i < snake.length; i++) {
+                        if (aiHead.x === snake[i].x && aiHead.y === snake[i].y) {
+                            startAiDeathAnimation();
+                            return;
+                        }
+                    }
+                    
+                    // Check if player snake hit AI snake body
+                    for (let i = 1; i < aiSnake.length; i++) {
+                        if (playerHead.x === aiSnake[i].x && playerHead.y === aiSnake[i].y) {
+                            endGame();
+                            return;
+                        }
+                    }
+                    
+                    // Check for head-on collision with main AI
+                    if (playerHead.x === aiHead.x && playerHead.y === aiHead.y) {
+                        // Both snakes die in a head-on collision
+                        endGame();
+                        startAiDeathAnimation();
+                        return;
+                    }
+                }
+                
+                // Friendly snake collisions
+                for (let j = 0; j < friendlySnakes.length; j++) {
+                    if (!friendlyDeathAnimations[j]) {
+                        const friendlyHead = friendlySnakes[j][0];
+                        
+                        // Check if friendly snake hit the wall
+                        if (friendlyHead.x < 0 || friendlyHead.x >= gridSize || 
+                            friendlyHead.y < 0 || friendlyHead.y >= gridSize) {
+                            startFriendlyDeathAnimation(j);
+                            continue;
+                        }
+                        
+                        // Check if friendly snake hit itself
+                        for (let i = 1; i < friendlySnakes[j].length; i++) {
+                            if (friendlyHead.x === friendlySnakes[j][i].x && 
+                                friendlyHead.y === friendlySnakes[j][i].y) {
+                                startFriendlyDeathAnimation(j);
+                                continue;
+                            }
+                        }
+                        
+                        // Check if friendly snake hit player snake
+                        let friendlyHitPlayer = false;
+                        for (let i = 0; i < snake.length; i++) {
+                            if (friendlyHead.x === snake[i].x && friendlyHead.y === snake[i].y) {
+                                startFriendlyDeathAnimation(j);
+                                friendlyHitPlayer = true;
+                                break;
+                            }
+                        }
+                        if (friendlyHitPlayer) continue;
+                        
+                        // Check if friendly snake hit other friendly snakes
+                        let friendlyHitFriendly = false;
+                        for (let k = 0; k < friendlySnakes.length; k++) {
+                            if (k !== j && !friendlyDeathAnimations[k]) {
+                                for (let i = 0; i < friendlySnakes[k].length; i++) {
+                                    if (friendlyHead.x === friendlySnakes[k][i].x && 
+                                        friendlyHead.y === friendlySnakes[k][i].y) {
+                                        startFriendlyDeathAnimation(j);
+                                        friendlyHitFriendly = true;
+                                        break;
+                                    }
+                                }
+                                if (friendlyHitFriendly) break;
+                            }
+                        }
+                        if (friendlyHitFriendly) continue;
+                        
+                        // Check if friendly snake hit the main enemy snake
+                        if (!aiDeathAnimation) {
+                            let friendlyHitEnemy = false;
+                            for (let i = 0; i < aiSnake.length; i++) {
+                                if (friendlyHead.x === aiSnake[i].x && friendlyHead.y === aiSnake[i].y) {
+                                    // Only the head colliding means just the friendly dies
+                                    startFriendlyDeathAnimation(j);
+                                    friendlyHitEnemy = true;
+                                    break;
+                                }
+                            }
+                            if (friendlyHitEnemy) continue;
+                        }
+                        
+                        // Check if friendly snake hit any enemy snakes
+                        let friendlyHitEnemySnake = false;
+                        for (let k = 0; k < enemySnakes.length; k++) {
+                            if (!enemyDeathAnimations[k]) {
+                                for (let i = 0; i < enemySnakes[k].length; i++) {
+                                    if (friendlyHead.x === enemySnakes[k][i].x && 
+                                        friendlyHead.y === enemySnakes[k][i].y) {
+                                        startFriendlyDeathAnimation(j);
+                                        friendlyHitEnemySnake = true;
+                                        break;
+                                    }
+                                }
+                                if (friendlyHitEnemySnake) break;
+                            }
+                        }
+                        if (friendlyHitEnemySnake) continue;
+                    }
+                }
+                
+                // Enemy snake collisions
+                for (let j = 0; j < enemySnakes.length; j++) {
+                    if (!enemyDeathAnimations[j]) {
+                        const enemyHead = enemySnakes[j][0];
+                        
+                        // Check if enemy snake hit the wall
+                        if (enemyHead.x < 0 || enemyHead.x >= gridSize || 
+                            enemyHead.y < 0 || enemyHead.y >= gridSize) {
+                            startEnemyDeathAnimation(j);
+                            continue;
+                        }
+                        
+                        // Check if enemy snake hit itself
+                        for (let i = 1; i < enemySnakes[j].length; i++) {
+                            if (enemyHead.x === enemySnakes[j][i].x && 
+                                enemyHead.y === enemySnakes[j][i].y) {
+                                startEnemyDeathAnimation(j);
+                                continue;
+                            }
+                        }
+                        
+                        // Check if enemy snake hit main AI snake
+                        if (!aiDeathAnimation) {
+                            let enemyHitMainAI = false;
+                            for (let i = 0; i < aiSnake.length; i++) {
+                                if (enemyHead.x === aiSnake[i].x && enemyHead.y === aiSnake[i].y) {
+                                    startEnemyDeathAnimation(j);
+                                    enemyHitMainAI = true;
+                                    break;
+                                }
+                            }
+                            if (enemyHitMainAI) continue;
+                        }
+                        
+                        // Check if enemy snake hit other enemy snakes
+                        let enemyHitEnemy = false;
+                        for (let k = 0; k < enemySnakes.length; k++) {
+                            if (k !== j && !enemyDeathAnimations[k]) {
+                                for (let i = 0; i < enemySnakes[k].length; i++) {
+                                    if (enemyHead.x === enemySnakes[k][i].x && 
+                                        enemyHead.y === enemySnakes[k][i].y) {
+                                        startEnemyDeathAnimation(j);
+                                        enemyHitEnemy = true;
+                                        break;
+                                    }
+                                }
+                                if (enemyHitEnemy) break;
+                            }
+                        }
+                        if (enemyHitEnemy) continue;
+                        
+                        // Check if enemy snake hit player snake
+                        let enemyHitPlayer = false;
+                        for (let i = 0; i < snake.length; i++) {
+                            if (enemyHead.x === snake[i].x && enemyHead.y === snake[i].y) {
+                                startEnemyDeathAnimation(j);
+                                enemyHitPlayer = true;
+                                break;
+                            }
+                        }
+                        if (enemyHitPlayer) continue;
+                        
+                        // Check if player snake hit enemy snake body
+                        for (let i = 1; i < enemySnakes[j].length; i++) {
+                            if (playerHead.x === enemySnakes[j][i].x && 
+                                playerHead.y === enemySnakes[j][i].y) {
+                                endGame();
+                                return;
+                            }
+                        }
+                        
+                        // Check if player and enemy snake head-on collision
+                        if (playerHead.x === enemyHead.x && playerHead.y === enemyHead.y) {
+                            endGame();
+                            startEnemyDeathAnimation(j);
+                            return;
+                        }
+                        
+                        // Check if enemy snake hit any friendly snakes
+                        for (let k = 0; k < friendlySnakes.length; k++) {
+                            if (!friendlyDeathAnimations[k]) {
+                                let enemyHitFriendly = false;
+                                for (let i = 0; i < friendlySnakes[k].length; i++) {
+                                    if (enemyHead.x === friendlySnakes[k][i].x && 
+                                        enemyHead.y === friendlySnakes[k][i].y) {
+                                        startEnemyDeathAnimation(j);
+                                        enemyHitFriendly = true;
+                                        break;
+                                    }
+                                }
+                                if (enemyHitFriendly) continue;
+                                
+                                // Check for head-on collision between enemy and friendly
+                                const friendlyHead = friendlySnakes[k][0];
+                                if (enemyHead.x === friendlyHead.x && enemyHead.y === friendlyHead.y) {
+                                    startEnemyDeathAnimation(j);
+                                    startFriendlyDeathAnimation(k);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // End game
+            function endGame() {
+                clearInterval(gameInterval);
+                gameRunning = false;
+                startButton.textContent = 'Start Game';
+                
+                // Play death sound
+                playDeathSound();
+                
+                // Start death animation
+                deathAnimation = true;
+                deathAnimationFrames = 0;
+                animateDeath();
+            }
+            
+            // Death animation
+            function animateDeath() {
+                if (deathAnimationFrames >= maxDeathAnimationFrames) {
+                    // Animation complete, show game over screen
+                    deathAnimation = false;
+                    
+                    // Show game over message
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(0, 0, canvasSize, canvasSize);
+                    
+                    ctx.font = '30px Arial';
+                    ctx.fillStyle = 'white';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Game Over!', canvasSize / 2, canvasSize / 2 - 20);
+                    
+                    ctx.font = '20px Arial';
+                    ctx.fillText(`Score: ${score}`, canvasSize / 2, canvasSize / 2 + 20);
+                    ctx.fillText('Press Reset to play again', canvasSize / 2, canvasSize / 2 + 60);
+                    return;
+                }
+                
+                // Clear canvas
+                drawCanvas();
+                
+                // Draw portals
+                drawPortals();
+                
+                // Draw pulsating/fading snake with slower animation
+                const pulseRate = Math.sin(deathAnimationFrames * 0.2);
+                const opacity = Math.max(0, 1 - deathAnimationFrames / maxDeathAnimationFrames);
+                
+                // Snake fragments effect with slower movement
+                snake.forEach((segment, index) => {
+                    // Calculate fragment dispersion - slowed down by dividing by 2
+                    const dispersionX = (Math.random() - 0.5) * (deathAnimationFrames / 2);
+                    const dispersionY = (Math.random() - 0.5) * (deathAnimationFrames / 2);
+                    
+                    // Pulsating size effect
+                    const sizeModifier = 1 + pulseRate * 0.2;
+                    const adjustedSize = boxSize * sizeModifier;
+                    
+                    // Rotate segments - reduced rotation speed
+                    const rotation = deathAnimationFrames * 0.04 * (index % 2 ? 1 : -1);
+                    
+                    // Set color with fading effect
+                    if (index === 0) {
+                        ctx.fillStyle = `rgba(0, 100, 0, ${opacity})`;
+                    } else {
+                        ctx.fillStyle = `rgba(50, 205, 50, ${opacity})`;
+                    }
+                    
+                    // Draw rotated segment
+                    ctx.save();
+                    ctx.translate(
+                        segment.x * boxSize + boxSize/2 + dispersionX,
+                        segment.y * boxSize + boxSize/2 + dispersionY
+                    );
+                    ctx.rotate(rotation);
+                    ctx.fillRect(-adjustedSize/2, -adjustedSize/2, adjustedSize, adjustedSize);
+                    ctx.restore();
+                });
+                
+                // Draw food
+                drawFood();
+                
+                // Continue animation
+                deathAnimationFrames++;
+                setTimeout(() => requestAnimationFrame(animateDeath), 30);
+            }
+            
+            // Create food at random position
+            function createFood() {
+                // Generate random position
+                food = {
+                    x: Math.floor(Math.random() * gridSize),
+                    y: Math.floor(Math.random() * gridSize)
+                };
+                
+                // Make sure food doesn't spawn on snake, AI snake, or portals
+                const isOnPlayerSnake = snake.some(segment => 
+                    food.x === segment.x && food.y === segment.y
+                );
+                
+                const isOnAiSnake = aiSnake.some(segment => 
+                    food.x === segment.x && food.y === segment.y
+                );
+                
+                const isOnPortal = portals.some(portal => 
+                    food.x === portal.x && food.y === portal.y
+                );
+                
+                if (isOnPlayerSnake || isOnAiSnake || isOnPortal) {
+                    createFood(); // Recursively try again
+                    return;
+                }
+            }
+            
+            // Create portals at random positions
+            function createPortals() {
+                portals = [];
+                
+                for (let i = 0; i < 2; i++) {
+                    const portal = {
+                        x: Math.floor(Math.random() * gridSize),
+                        y: Math.floor(Math.random() * gridSize)
+                    };
+                    
+                    // Make sure portals don't overlap with snake or each other
+                    const isOnSnake = snake.some(segment => 
+                        portal.x === segment.x && portal.y === segment.y
+                    );
+                    
+                    const isOnOtherPortal = portals.some(p => 
+                        portal.x === p.x && portal.y === p.y
+                    );
+                    
+                    if (isOnSnake || isOnOtherPortal) {
+                        i--; // Try again for this portal
+                        continue;
+                    }
+                    
+                    portals.push(portal);
+                }
+            }
+            
+            // Start portal flashing before moving
+            function startPortalFlashing() {
+                isPortalFlashing = true;
+                portalFlashCount = 0;
+                
+                portalFlashInterval = setInterval(() => {
+                    portalFlashCount++;
+                    
+                    if (portalFlashCount >= maxPortalFlashCount) {
+                        // Stop flashing and move portals
+                        clearInterval(portalFlashInterval);
+                        isPortalFlashing = false;
+                        createPortals(); // Move portals to new random positions
+                    }
+                }, 250); // Flash every 250ms (on for 250ms, off for 250ms)
+            }
+            
+            // Check if snake head collides with a portal
+            function checkPortalCollision(head) {
+                for (let i = 0; i < portals.length; i++) {
+                    if (head.x === portals[i].x && head.y === portals[i].y) {
+                        return i; // Return portal index
+                    }
+                }
+                return -1; // No collision
+            }
+            
+            // Draw portals
+            function drawPortals() {
+                portals.forEach((portal, index) => {
+                    // Determine portal color (flashing or normal)
+                    let fillColor;
+                    if (isPortalFlashing && portalFlashCount % 2 === 0) {
+                        fillColor = portalFlashColor; // Red flash
+                    } else {
+                        fillColor = portalColors[index]; // Normal color
+                    }
+                    
+                    // Draw portal circle
+                    ctx.fillStyle = fillColor;
+                    ctx.beginPath();
+                    ctx.arc(
+                        portal.x * boxSize + boxSize/2,
+                        portal.y * boxSize + boxSize/2,
+                        portalSize/2,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    // Draw portal ring
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(
+                        portal.x * boxSize + boxSize/2,
+                        portal.y * boxSize + boxSize/2,
+                        portalSize/2 * 0.7,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.stroke();
+                    
+                    // Draw swirl effect
+                    const time = Date.now() * 0.005;
+                    const angleOffset = index * Math.PI + time;
+                    
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    for (let i = 0; i < 2; i++) {
+                        const angle = angleOffset + i * Math.PI;
+                        const radius = portalSize/2 * 0.4;
+                        
+                        ctx.moveTo(
+                            portal.x * boxSize + boxSize/2,
+                            portal.y * boxSize + boxSize/2
+                        );
+                        ctx.lineTo(
+                            portal.x * boxSize + boxSize/2 + Math.cos(angle) * radius,
+                            portal.y * boxSize + boxSize/2 + Math.sin(angle) * radius
+                        );
+                    }
+                    ctx.stroke();
+                });
+            }
+            
+            // Clear canvas
+            function drawCanvas() {
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, canvasSize, canvasSize);
+                
+                // Draw grid (optional)
+                ctx.strokeStyle = '#f0f0f0';
+                for (let i = 0; i < gridSize; i++) {
+                    // Vertical lines
+                    ctx.beginPath();
+                    ctx.moveTo(i * boxSize, 0);
+                    ctx.lineTo(i * boxSize, canvasSize);
+                    ctx.stroke();
+                    
+                    // Horizontal lines
+                    ctx.beginPath();
+                    ctx.moveTo(0, i * boxSize);
+                    ctx.lineTo(canvasSize, i * boxSize);
+                    ctx.stroke();
+                }
+            }
+            
+            // Draw snake
+            function drawSnake() {
+                snake.forEach((segment, index) => {
+                    // Head is a different color
+                    if (index === 0) {
+                        ctx.fillStyle = '#006400'; // Dark green for head
+                    } else {
+                        ctx.fillStyle = '#32CD32'; // Light green for body
+                    }
+                    
+                    ctx.fillRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add border to make segments distinct
+                    ctx.strokeStyle = '#fff';
+                    ctx.strokeRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add eyes to the head
+                    if (index === 0) {
+                        ctx.fillStyle = '#fff';
+                        
+                        // Position eyes based on direction
+                        const eyeSize = boxSize / 5;
+                        const eyeOffset = boxSize / 3;
+                        
+                        let leftEyeX, leftEyeY, rightEyeX, rightEyeY;
+                        
+                        switch (direction) {
+                            case 'right':
+                                leftEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'left':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'up':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + eyeOffset;
+                                break;
+                            case 'down':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                        }
+                        
+                        ctx.beginPath();
+                        ctx.arc(leftEyeX, leftEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.beginPath();
+                        ctx.arc(rightEyeX, rightEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+            }
+            
+            // Draw food
+            function drawFood() {
+                // Draw apple-like food
+                ctx.fillStyle = '#ff0000';
+                ctx.beginPath();
+                ctx.arc(
+                    food.x * boxSize + boxSize / 2,
+                    food.y * boxSize + boxSize / 2,
+                    boxSize / 2,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Add stem
+                ctx.fillStyle = '#654321';
+                ctx.fillRect(
+                    food.x * boxSize + boxSize / 2 - 2,
+                    food.y * boxSize + 2,
+                    4,
+                    boxSize / 4
+                );
+            }
+            
+            // Update AI snake position
+            function updateAiSnake() {
+                // Calculate the best direction to move
+                aiDirection = calculateAiDirection();
+                
+                const head = {...aiSnake[0]};
+                
+                // Move in the calculated direction
+                switch (aiDirection) {
+                    case 'up':
+                        head.y -= 1;
+                        break;
+                    case 'down':
+                        head.y += 1;
+                        break;
+                    case 'left':
+                        head.x -= 1;
+                        break;
+                    case 'right':
+                        head.x += 1;
+                        break;
+                }
+                
+                // Check for portal teleportation for AI
+                const portalIndex = checkPortalCollision(head);
+                if (portalIndex !== -1) {
+                    // Play portal sound
+                    playPortalSound();
+                    
+                    // Teleport to the other portal
+                    const exitPortalIndex = portalIndex === 0 ? 1 : 0;
+                    head.x = portals[exitPortalIndex].x;
+                    head.y = portals[exitPortalIndex].y;
+                    
+                    // Move one step in current direction to avoid getting stuck in portal
+                    switch (aiDirection) {
+                        case 'up':
+                            head.y -= 1;
+                            break;
+                        case 'down':
+                            head.y += 1;
+                            break;
+                        case 'left':
+                            head.x -= 1;
+                            break;
+                        case 'right':
+                            head.x += 1;
+                            break;
+                    }
+                }
+                
+                aiSnake.unshift(head);
+                
+                // Check if AI snake eats food
+                if (head.x === food.x && head.y === food.y) {
+                    // Increase AI score
+                    aiScore += 10;
+                    
+                    // Create new food
+                    createFood();
+                    
+                    // Check if AI snake is long enough to split
+                    if (aiSnake.length >= minSplitLength) {
+                        splitEnemySnake();
+                    }
+                } else {
+                    // Remove tail if no food eaten
+                    aiSnake.pop();
+                }
+            }
+            
+            // Split enemy snake into two
+            function splitEnemySnake() {
+                const halfLength = Math.floor(aiSnake.length / 2);
+                
+                // Create a new enemy snake from the back half
+                const newSnake = aiSnake.slice(halfLength);
+                
+                // Determine direction for the new snake
+                // Choose a direction perpendicular to current AI direction
+                let newDirection;
+                if (aiDirection === 'up' || aiDirection === 'down') {
+                    newDirection = Math.random() < 0.5 ? 'left' : 'right';
+                } else {
+                    newDirection = Math.random() < 0.5 ? 'up' : 'down';
+                }
+                
+                // Add to enemy snakes array
+                enemySnakes.push(newSnake);
+                enemyDirections.push(newDirection);
+                enemyDeathAnimations.push(false);
+                enemyDeathAnimationFrames.push(0);
+                
+                // Original AI keeps front half
+                aiSnake = aiSnake.slice(0, halfLength);
+            }
+            
+            // Calculate the best direction for the AI to move
+            function calculateAiDirection() {
+                const head = aiSnake[0];
+                const possibleDirections = [];
+                
+                // Check all four directions and eliminate dangerous ones
+                const directions = ['up', 'right', 'down', 'left'];
+                
+                // Define opposite directions
+                const opposites = {
+                    'up': 'down',
+                    'down': 'up',
+                    'left': 'right',
+                    'right': 'left'
+                };
+                
+                // Don't go back on yourself
+                directions.forEach(dir => {
+                    if (dir !== opposites[aiDirection]) {
+                        possibleDirections.push(dir);
+                    }
+                });
+                
+                // Filter out directions that lead to immediate collisions
+                const safeDirections = possibleDirections.filter(dir => {
+                    const newHead = {...head};
+                    
+                    switch (dir) {
+                        case 'up':
+                            newHead.y -= 1;
+                            break;
+                        case 'down':
+                            newHead.y += 1;
+                            break;
+                        case 'left':
+                            newHead.x -= 1;
+                            break;
+                        case 'right':
+                            newHead.x += 1;
+                            break;
+                    }
+                    
+                    // Check wall collision
+                    if (newHead.x < 0 || newHead.x >= gridSize || newHead.y < 0 || newHead.y >= gridSize) {
+                        return false;
+                    }
+                    
+                    // Check AI self collision
+                    for (let i = 0; i < aiSnake.length - 1; i++) { // -1 because tail will move
+                        if (newHead.x === aiSnake[i].x && newHead.y === aiSnake[i].y) {
+                            return false;
+                        }
+                    }
+                    
+                    // Check player snake collision
+                    for (let i = 0; i < snake.length; i++) {
+                        if (newHead.x === snake[i].x && newHead.y === snake[i].y) {
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                // Occasionally make random moves to add unpredictability
+                if (Math.random() > aiDifficulty && safeDirections.length > 0) {
+                    return safeDirections[Math.floor(Math.random() * safeDirections.length)];
+                }
+                
+                // If no safe directions, just continue in current direction (AI will die)
+                if (safeDirections.length === 0) {
+                    return aiDirection;
+                }
+                
+                // Calculate distances to food for each safe direction
+                const distances = safeDirections.map(dir => {
+                    const newHead = {...head};
+                    
+                    switch (dir) {
+                        case 'up':
+                            newHead.y -= 1;
+                            break;
+                        case 'down':
+                            newHead.y += 1;
+                            break;
+                        case 'left':
+                            newHead.x -= 1;
+                            break;
+                        case 'right':
+                            newHead.x += 1;
+                            break;
+                    }
+                    
+                    // Manhattan distance to food
+                    return {
+                        direction: dir,
+                        distance: Math.abs(newHead.x - food.x) + Math.abs(newHead.y - food.y)
+                    };
+                });
+                
+                // Sort by shortest distance to food
+                distances.sort((a, b) => a.distance - b.distance);
+                
+                // Return the direction with the shortest distance to food
+                return distances[0].direction;
+            }
+            
+            // Start AI death animation
+            function startAiDeathAnimation() {
+                // Play death sound
+                playDeathSound();
+                
+                aiDeathAnimation = true;
+                aiDeathAnimationFrames = 0;
+            }
+            
+            // Animate AI snake death
+            function animateAiDeath() {
+                if (aiDeathAnimationFrames >= maxDeathAnimationFrames) {
+                    // Animation complete, remove AI snake
+                    aiDeathAnimation = false;
+                    aiSnake = [];
+                    return;
+                }
+                
+                // Draw pulsating/fading AI snake
+                const pulseRate = Math.sin(aiDeathAnimationFrames * 0.2);
+                const opacity = Math.max(0, 1 - aiDeathAnimationFrames / maxDeathAnimationFrames);
+                
+                // Snake fragments effect
+                aiSnake.forEach((segment, index) => {
+                    // Calculate fragment dispersion
+                    const dispersionX = (Math.random() - 0.5) * (aiDeathAnimationFrames / 2);
+                    const dispersionY = (Math.random() - 0.5) * (aiDeathAnimationFrames / 2);
+                    
+                    // Pulsating size effect
+                    const sizeModifier = 1 + pulseRate * 0.2;
+                    const adjustedSize = boxSize * sizeModifier;
+                    
+                    // Rotate segments
+                    const rotation = aiDeathAnimationFrames * 0.04 * (index % 2 ? 1 : -1);
+                    
+                    // Set color with fading effect
+                    if (index === 0) {
+                        ctx.fillStyle = `rgba(139, 0, 0, ${opacity})`; // Dark red for head
+                    } else {
+                        ctx.fillStyle = `rgba(255, 69, 0, ${opacity})`; // OrangeRed for body
+                    }
+                    
+                    // Draw rotated segment
+                    ctx.save();
+                    ctx.translate(
+                        segment.x * boxSize + boxSize/2 + dispersionX,
+                        segment.y * boxSize + boxSize/2 + dispersionY
+                    );
+                    ctx.rotate(rotation);
+                    ctx.fillRect(-adjustedSize/2, -adjustedSize/2, adjustedSize, adjustedSize);
+                    ctx.restore();
+                });
+                
+                // Continue animation
+                aiDeathAnimationFrames++;
+            }
+            
+            // Draw AI snake
+            function drawAiSnake() {
+                aiSnake.forEach((segment, index) => {
+                    // Head is a different color
+                    if (index === 0) {
+                        ctx.fillStyle = '#8B0000'; // Dark red for head
+                    } else {
+                        ctx.fillStyle = '#DC143C'; // Crimson for body
+                    }
+                    
+                    ctx.fillRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add border to make segments distinct
+                    ctx.strokeStyle = '#fff';
+                    ctx.strokeRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add eyes to the head
+                    if (index === 0) {
+                        ctx.fillStyle = '#fff';
+                        
+                        // Position eyes based on direction
+                        const eyeSize = boxSize / 5;
+                        const eyeOffset = boxSize / 3;
+                        
+                        let leftEyeX, leftEyeY, rightEyeX, rightEyeY;
+                        
+                        switch (aiDirection) {
+                            case 'right':
+                                leftEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'left':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'up':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + eyeOffset;
+                                break;
+                            case 'down':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                        }
+                        
+                        ctx.beginPath();
+                        ctx.arc(leftEyeX, leftEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.beginPath();
+                        ctx.arc(rightEyeX, rightEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+            }
+            
+            // Update friendly snake position
+            function updateFriendlySnake(index) {
+                const friendlySnake = friendlySnakes[index];
+                let direction = friendlyDirections[index];
+                
+                // Calculate new direction using a simplified AI algorithm
+                // This AI is friendly to the player's snake
+                direction = calculateFriendlyDirection(friendlySnake, direction, index);
+                friendlyDirections[index] = direction;
+                
+                const head = {...friendlySnake[0]};
+                
+                // Move in the calculated direction
+                switch (direction) {
+                    case 'up':
+                        head.y -= 1;
+                        break;
+                    case 'down':
+                        head.y += 1;
+                        break;
+                    case 'left':
+                        head.x -= 1;
+                        break;
+                    case 'right':
+                        head.x += 1;
+                        break;
+                }
+                
+                // Check for portal teleportation
+                const portalIndex = checkPortalCollision(head);
+                if (portalIndex !== -1) {
+                    // Play portal sound
+                    playPortalSound();
+                    
+                    // Teleport to the other portal
+                    const exitPortalIndex = portalIndex === 0 ? 1 : 0;
+                    head.x = portals[exitPortalIndex].x;
+                    head.y = portals[exitPortalIndex].y;
+                    
+                    // Move one step in current direction to avoid getting stuck in portal
+                    switch (direction) {
+                        case 'up':
+                            head.y -= 1;
+                            break;
+                        case 'down':
+                            head.y += 1;
+                            break;
+                        case 'left':
+                            head.x -= 1;
+                            break;
+                        case 'right':
+                            head.x += 1;
+                            break;
+                    }
+                }
+                
+                friendlySnake.unshift(head);
+                
+                // Check if friendly snake eats food
+                if (head.x === food.x && head.y === food.y) {
+                    // Increase player score (friendly snake helps player)
+                    score += 10;
+                    scoreElement.textContent = score;
+                    
+                    // Create new food
+                    createFood();
+                    
+                    // Check if friendly snake is long enough to split again
+                    if (friendlySnake.length >= minSplitLength) {
+                        splitFriendlySnake(index);
+                    }
+                } else {
+                    // Remove tail if no food eaten
+                    friendlySnake.pop();
+                }
+            }
+            
+            // Update enemy snake position
+            function updateEnemySnake(index) {
+                const enemySnake = enemySnakes[index];
+                let direction = enemyDirections[index];
+                
+                // Calculate new direction using the same AI algorithm as the main enemy
+                direction = calculateEnemyDirection(enemySnake, direction, index);
+                enemyDirections[index] = direction;
+                
+                const head = {...enemySnake[0]};
+                
+                // Move in the calculated direction
+                switch (direction) {
+                    case 'up':
+                        head.y -= 1;
+                        break;
+                    case 'down':
+                        head.y += 1;
+                        break;
+                    case 'left':
+                        head.x -= 1;
+                        break;
+                    case 'right':
+                        head.x += 1;
+                        break;
+                }
+                
+                // Check for portal teleportation
+                const portalIndex = checkPortalCollision(head);
+                if (portalIndex !== -1) {
+                    // Play portal sound
+                    playPortalSound();
+                    
+                    // Teleport to the other portal
+                    const exitPortalIndex = portalIndex === 0 ? 1 : 0;
+                    head.x = portals[exitPortalIndex].x;
+                    head.y = portals[exitPortalIndex].y;
+                    
+                    // Move one step in current direction to avoid getting stuck in portal
+                    switch (direction) {
+                        case 'up':
+                            head.y -= 1;
+                            break;
+                        case 'down':
+                            head.y += 1;
+                            break;
+                        case 'left':
+                            head.x -= 1;
+                            break;
+                        case 'right':
+                            head.x += 1;
+                            break;
+                    }
+                }
+                
+                enemySnake.unshift(head);
+                
+                // Check if enemy snake eats food
+                if (head.x === food.x && head.y === food.y) {
+                    // Increase AI score
+                    aiScore += 10;
+                    
+                    // Create new food
+                    createFood();
+                    
+                    // Check if enemy snake is long enough to split again
+                    if (enemySnake.length >= minSplitLength) {
+                        splitEnemySnake2(index);
+                    }
+                } else {
+                    // Remove tail if no food eaten
+                    enemySnake.pop();
+                }
+            }
+            
+            // Draw friendly snake
+            function drawFriendlySnake(index) {
+                const friendlySnake = friendlySnakes[index];
+                const direction = friendlyDirections[index];
+                
+                friendlySnake.forEach((segment, segIndex) => {
+                    // Head is a different color
+                    if (segIndex === 0) {
+                        ctx.fillStyle = '#228B22'; // Forest green for head
+                    } else {
+                        ctx.fillStyle = '#98FB98'; // Pale green for body
+                    }
+                    
+                    ctx.fillRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add border to make segments distinct
+                    ctx.strokeStyle = '#fff';
+                    ctx.strokeRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add eyes to the head
+                    if (segIndex === 0) {
+                        ctx.fillStyle = '#fff';
+                        
+                        // Position eyes based on direction
+                        const eyeSize = boxSize / 5;
+                        const eyeOffset = boxSize / 3;
+                        
+                        let leftEyeX, leftEyeY, rightEyeX, rightEyeY;
+                        
+                        switch (direction) {
+                            case 'right':
+                                leftEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'left':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'up':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + eyeOffset;
+                                break;
+                            case 'down':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                        }
+                        
+                        ctx.beginPath();
+                        ctx.arc(leftEyeX, leftEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.beginPath();
+                        ctx.arc(rightEyeX, rightEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+            }
+            
+            // Draw enemy snake
+            function drawEnemySnake(index) {
+                const enemySnake = enemySnakes[index];
+                const direction = enemyDirections[index];
+                
+                enemySnake.forEach((segment, segIndex) => {
+                    // Head is a different color
+                    if (segIndex === 0) {
+                        ctx.fillStyle = '#8B0000'; // Dark red for head
+                    } else {
+                        ctx.fillStyle = '#FF4500'; // OrangeRed for body (slightly different from main AI)
+                    }
+                    
+                    ctx.fillRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add border to make segments distinct
+                    ctx.strokeStyle = '#fff';
+                    ctx.strokeRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
+                    
+                    // Add eyes to the head
+                    if (segIndex === 0) {
+                        ctx.fillStyle = '#fff';
+                        
+                        // Position eyes based on direction
+                        const eyeSize = boxSize / 5;
+                        const eyeOffset = boxSize / 3;
+                        
+                        let leftEyeX, leftEyeY, rightEyeX, rightEyeY;
+                        
+                        switch (direction) {
+                            case 'right':
+                                leftEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'left':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                            case 'up':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + eyeOffset;
+                                break;
+                            case 'down':
+                                leftEyeX = segment.x * boxSize + eyeOffset;
+                                leftEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                rightEyeX = segment.x * boxSize + boxSize - eyeOffset;
+                                rightEyeY = segment.y * boxSize + boxSize - eyeOffset;
+                                break;
+                        }
+                        
+                        ctx.beginPath();
+                        ctx.arc(leftEyeX, leftEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.beginPath();
+                        ctx.arc(rightEyeX, rightEyeY, eyeSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+            }
+            
+            // Calculate the best direction for a friendly AI
+            function calculateFriendlyDirection(friendlySnake, currentDirection, index) {
+                const head = friendlySnake[0];
+                const possibleDirections = [];
+                
+                // Check all four directions and eliminate dangerous ones
+                const directions = ['up', 'right', 'down', 'left'];
+                
+                // Define opposite directions
+                const opposites = {
+                    'up': 'down',
+                    'down': 'up',
+                    'left': 'right',
+                    'right': 'left'
+                };
+                
+                // Don't go back on yourself
+                directions.forEach(dir => {
+                    if (dir !== opposites[currentDirection]) {
+                        possibleDirections.push(dir);
+                    }
+                });
+                
+                // Filter out directions that lead to immediate collisions
+                const safeDirections = possibleDirections.filter(dir => {
+                    const newHead = {...head};
+                    
+                    switch (dir) {
+                        case 'up':
+                            newHead.y -= 1;
+                            break;
+                        case 'down':
+                            newHead.y += 1;
+                            break;
+                        case 'left':
+                            newHead.x -= 1;
+                            break;
+                        case 'right':
+                            newHead.x += 1;
+                            break;
+                    }
+                    
+                    // Check wall collision
+                    if (newHead.x < 0 || newHead.x >= gridSize || newHead.y < 0 || newHead.y >= gridSize) {
+                        return false;
+                    }
+                    
+                    // Check self collision
+                    for (let i = 0; i < friendlySnake.length - 1; i++) {
+                        if (newHead.x === friendlySnake[i].x && newHead.y === friendlySnake[i].y) {
+                            return false;
+                        }
+                    }
+                    
+                    // Check player collision (avoid hitting player)
+                    for (let i = 0; i < snake.length; i++) {
+                        if (newHead.x === snake[i].x && newHead.y === snake[i].y) {
+                            return false;
+                        }
+                    }
+                    
+                    // Check collision with other friendly snakes
+                    for (let j = 0; j < friendlySnakes.length; j++) {
+                        if (j !== index) { // Skip self
+                            for (let i = 0; i < friendlySnakes[j].length; i++) {
+                                if (newHead.x === friendlySnakes[j][i].x && newHead.y === friendlySnakes[j][i].y) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Check enemy snake collisions (avoid enemies)
+                    if (aiSnake.length > 0) {
+                        for (let i = 0; i < aiSnake.length; i++) {
+                            if (newHead.x === aiSnake[i].x && newHead.y === aiSnake[i].y) {
+                                return false;
+                            }
+                        }
+                    }
+                    
+                    for (let j = 0; j < enemySnakes.length; j++) {
+                        for (let i = 0; i < enemySnakes[j].length; i++) {
+                            if (newHead.x === enemySnakes[j][i].x && newHead.y === enemySnakes[j][i].y) {
+                                return false;
+                            }
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                // If no safe directions, just continue in current direction (will likely die)
+                if (safeDirections.length === 0) {
+                    return currentDirection;
+                }
+                
+                // Add some randomness to friendly snakes (less focused on food)
+                if (Math.random() < 0.3) {
+                    return safeDirections[Math.floor(Math.random() * safeDirections.length)];
+                }
+                
+                // Calculate distances to food for each safe direction
+                const distances = safeDirections.map(dir => {
+                    const newHead = {...head};
+                    
+                    switch (dir) {
+                        case 'up':
+                            newHead.y -= 1;
+                            break;
+                        case 'down':
+                            newHead.y += 1;
+                            break;
+                        case 'left':
+                            newHead.x -= 1;
+                            break;
+                        case 'right':
+                            newHead.x += 1;
+                            break;
+                    }
+                    
+                    // Manhattan distance to food
+                    return {
+                        direction: dir,
+                        distance: Math.abs(newHead.x - food.x) + Math.abs(newHead.y - food.y)
+                    };
+                });
+                
+                // Sort by shortest distance to food
+                distances.sort((a, b) => a.distance - b.distance);
+                
+                // Return the direction with the shortest distance to food
+                return distances[0].direction;
+            }
+            
+            // Calculate the best direction for an enemy AI
+            function calculateEnemyDirection(enemySnake, currentDirection, index) {
+                const head = enemySnake[0];
+                const possibleDirections = [];
+                
+                // Check all four directions and eliminate dangerous ones
+                const directions = ['up', 'right', 'down', 'left'];
+                
+                // Define opposite directions
+                const opposites = {
+                    'up': 'down',
+                    'down': 'up',
+                    'left': 'right',
+                    'right': 'left'
+                };
+                
+                // Don't go back on yourself
+                directions.forEach(dir => {
+                    if (dir !== opposites[currentDirection]) {
+                        possibleDirections.push(dir);
+                    }
+                });
+                
+                // Filter out directions that lead to immediate collisions
+                const safeDirections = possibleDirections.filter(dir => {
+                    const newHead = {...head};
+                    
+                    switch (dir) {
+                        case 'up':
+                            newHead.y -= 1;
+                            break;
+                        case 'down':
+                            newHead.y += 1;
+                            break;
+                        case 'left':
+                            newHead.x -= 1;
+                            break;
+                        case 'right':
+                            newHead.x += 1;
+                            break;
+                    }
+                    
+                    // Check wall collision
+                    if (newHead.x < 0 || newHead.x >= gridSize || newHead.y < 0 || newHead.y >= gridSize) {
+                        return false;
+                    }
+                    
+                    // Check self collision
+                    for (let i = 0; i < enemySnake.length - 1; i++) {
+                        if (newHead.x === enemySnake[i].x && newHead.y === enemySnake[i].y) {
+                            return false;
+                        }
+                    }
+                    
+                    // Check collision with main enemy snake
+                    for (let i = 0; i < aiSnake.length; i++) {
+                        if (newHead.x === aiSnake[i].x && newHead.y === aiSnake[i].y) {
+                            return false;
+                        }
+                    }
+                    
+                    // Check collision with other enemy snakes
+                    for (let j = 0; j < enemySnakes.length; j++) {
+                        if (j !== index) { // Skip self
+                            for (let i = 0; i < enemySnakes[j].length; i++) {
+                                if (newHead.x === enemySnakes[j][i].x && newHead.y === enemySnakes[j][i].y) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                // Occasionally make random moves to add unpredictability
+                if (Math.random() > aiDifficulty && safeDirections.length > 0) {
+                    return safeDirections[Math.floor(Math.random() * safeDirections.length)];
+                }
+                
+                // If no safe directions, just continue in current direction (will likely die)
+                if (safeDirections.length === 0) {
+                    return currentDirection;
+                }
+                
+                // Calculate distances to food for each safe direction
+                const distances = safeDirections.map(dir => {
+                    const newHead = {...head};
+                    
+                    switch (dir) {
+                        case 'up':
+                            newHead.y -= 1;
+                            break;
+                        case 'down':
+                            newHead.y += 1;
+                            break;
+                        case 'left':
+                            newHead.x -= 1;
+                            break;
+                        case 'right':
+                            newHead.x += 1;
+                            break;
+                    }
+                    
+                    // Manhattan distance to food
+                    return {
+                        direction: dir,
+                        distance: Math.abs(newHead.x - food.x) + Math.abs(newHead.y - food.y)
+                    };
+                });
+                
+                // Sort by shortest distance to food
+                distances.sort((a, b) => a.distance - b.distance);
+                
+                // Return the direction with the shortest distance to food
+                return distances[0].direction;
+            }
+            
+            // Additional split functions
+            function splitFriendlySnake(index) {
+                const friendlySnake = friendlySnakes[index];
+                const halfLength = Math.floor(friendlySnake.length / 2);
+                
+                // Create a new friendly snake from the back half
+                const newSnake = friendlySnake.slice(halfLength);
+                
+                // Determine direction for the new snake
+                let newDirection;
+                if (friendlyDirections[index] === 'up' || friendlyDirections[index] === 'down') {
+                    newDirection = Math.random() < 0.5 ? 'left' : 'right';
+                } else {
+                    newDirection = Math.random() < 0.5 ? 'up' : 'down';
+                }
+                
+                // Add to friendly snakes array
+                friendlySnakes.push(newSnake);
+                friendlyDirections.push(newDirection);
+                friendlyDeathAnimations.push(false);
+                friendlyDeathAnimationFrames.push(0);
+                
+                // Original friendly snake keeps front half
+                friendlySnakes[index] = friendlySnake.slice(0, halfLength);
+            }
+            
+            function splitEnemySnake2(index) {
+                const enemySnake = enemySnakes[index];
+                const halfLength = Math.floor(enemySnake.length / 2);
+                
+                // Create a new enemy snake from the back half
+                const newSnake = enemySnake.slice(halfLength);
+                
+                // Determine direction for the new snake
+                let newDirection;
+                if (enemyDirections[index] === 'up' || enemyDirections[index] === 'down') {
+                    newDirection = Math.random() < 0.5 ? 'left' : 'right';
+                } else {
+                    newDirection = Math.random() < 0.5 ? 'up' : 'down';
+                }
+                
+                // Add to enemy snakes array
+                enemySnakes.push(newSnake);
+                enemyDirections.push(newDirection);
+                enemyDeathAnimations.push(false);
+                enemyDeathAnimationFrames.push(0);
+                
+                // Original enemy snake keeps front half
+                enemySnakes[index] = enemySnake.slice(0, halfLength);
+            }
+            
+            // Death animations for friendly and enemy snakes
+            function animateFriendlyDeath(index) {
+                const friendlySnake = friendlySnakes[index];
+                
+                if (friendlyDeathAnimationFrames[index] >= maxDeathAnimationFrames) {
+                    // Animation complete, remove this friendly snake
+                    friendlySnakes.splice(index, 1);
+                    friendlyDirections.splice(index, 1);
+                    friendlyDeathAnimations.splice(index, 1);
+                    friendlyDeathAnimationFrames.splice(index, 1);
+                    return;
+                }
+                
+                // Draw pulsating/fading friendly snake
+                const pulseRate = Math.sin(friendlyDeathAnimationFrames[index] * 0.2);
+                const opacity = Math.max(0, 1 - friendlyDeathAnimationFrames[index] / maxDeathAnimationFrames);
+                
+                // Snake fragments effect
+                friendlySnake.forEach((segment, segIndex) => {
+                    // Calculate fragment dispersion
+                    const dispersionX = (Math.random() - 0.5) * (friendlyDeathAnimationFrames[index] / 2);
+                    const dispersionY = (Math.random() - 0.5) * (friendlyDeathAnimationFrames[index] / 2);
+                    
+                    // Pulsating size effect
+                    const sizeModifier = 1 + pulseRate * 0.2;
+                    const adjustedSize = boxSize * sizeModifier;
+                    
+                    // Rotate segments
+                    const rotation = friendlyDeathAnimationFrames[index] * 0.04 * (segIndex % 2 ? 1 : -1);
+                    
+                    // Set color with fading effect
+                    if (segIndex === 0) {
+                        ctx.fillStyle = `rgba(34, 139, 34, ${opacity})`; // Forest green for head
+                    } else {
+                        ctx.fillStyle = `rgba(152, 251, 152, ${opacity})`; // Pale green for body
+                    }
+                    
+                    // Draw rotated segment
+                    ctx.save();
+                    ctx.translate(
+                        segment.x * boxSize + boxSize/2 + dispersionX,
+                        segment.y * boxSize + boxSize/2 + dispersionY
+                    );
+                    ctx.rotate(rotation);
+                    ctx.fillRect(-adjustedSize/2, -adjustedSize/2, adjustedSize, adjustedSize);
+                    ctx.restore();
+                });
+                
+                // Continue animation
+                friendlyDeathAnimationFrames[index]++;
+            }
+            
+            function animateEnemyDeath(index) {
+                const enemySnake = enemySnakes[index];
+                
+                if (enemyDeathAnimationFrames[index] >= maxDeathAnimationFrames) {
+                    // Animation complete, remove this enemy snake
+                    enemySnakes.splice(index, 1);
+                    enemyDirections.splice(index, 1);
+                    enemyDeathAnimations.splice(index, 1);
+                    enemyDeathAnimationFrames.splice(index, 1);
+                    return;
+                }
+                
+                // Draw pulsating/fading enemy snake
+                const pulseRate = Math.sin(enemyDeathAnimationFrames[index] * 0.2);
+                const opacity = Math.max(0, 1 - enemyDeathAnimationFrames[index] / maxDeathAnimationFrames);
+                
+                // Snake fragments effect
+                enemySnake.forEach((segment, segIndex) => {
+                    // Calculate fragment dispersion
+                    const dispersionX = (Math.random() - 0.5) * (enemyDeathAnimationFrames[index] / 2);
+                    const dispersionY = (Math.random() - 0.5) * (enemyDeathAnimationFrames[index] / 2);
+                    
+                    // Pulsating size effect
+                    const sizeModifier = 1 + pulseRate * 0.2;
+                    const adjustedSize = boxSize * sizeModifier;
+                    
+                    // Rotate segments
+                    const rotation = enemyDeathAnimationFrames[index] * 0.04 * (segIndex % 2 ? 1 : -1);
+                    
+                    // Set color with fading effect
+                    if (segIndex === 0) {
+                        ctx.fillStyle = `rgba(139, 0, 0, ${opacity})`; // Dark red for head
+                    } else {
+                        ctx.fillStyle = `rgba(255, 69, 0, ${opacity})`; // OrangeRed for body
+                    }
+                    
+                    // Draw rotated segment
+                    ctx.save();
+                    ctx.translate(
+                        segment.x * boxSize + boxSize/2 + dispersionX,
+                        segment.y * boxSize + boxSize/2 + dispersionY
+                    );
+                    ctx.rotate(rotation);
+                    ctx.fillRect(-adjustedSize/2, -adjustedSize/2, adjustedSize, adjustedSize);
+                    ctx.restore();
+                });
+                
+                // Continue animation
+                enemyDeathAnimationFrames[index]++;
+            }
+            
+            // Start friendly death animation
+            function startFriendlyDeathAnimation(index) {
+                // Play death sound
+                playDeathSound();
+                
+                friendlyDeathAnimations[index] = true;
+                friendlyDeathAnimationFrames[index] = 0;
+            }
+            
+            // Start enemy death animation
+            function startEnemyDeathAnimation(index) {
+                // Play death sound
+                playDeathSound();
+                
+                enemyDeathAnimations[index] = true;
+                enemyDeathAnimationFrames[index] = 0;
+            }
+            
+            // Event listeners
+            startButton.addEventListener('click', startGame);
+            resetButton.addEventListener('click', initGame);
+            
+            // Initialize game on load
+            initGame();
+        });
+    </script>
+</body>
+</html> 
