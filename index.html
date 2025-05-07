@@ -40,6 +40,23 @@
         button:hover {
             background-color: #45a049;
         }
+        .color-picker-container {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .color-picker-container label {
+            margin-right: 10px;
+            font-size: 16px;
+        }
+        #snakeColorPicker {
+            width: 60px;
+            height: 30px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -49,6 +66,10 @@
     <div class="controls">
         <button id="startButton">Start Game</button>
         <button id="resetButton">Reset Game</button>
+    </div>
+    <div class="color-picker-container">
+        <label for="snakeColorPicker">Snake Color:</label>
+        <input type="color" id="snakeColorPicker" value="#32CD32">
     </div>
     <p>Use arrow keys to control the snake</p>
     
@@ -67,6 +88,7 @@
             const scoreElement = document.getElementById('score');
             const startButton = document.getElementById('startButton');
             const resetButton = document.getElementById('resetButton');
+            const snakeColorPicker = document.getElementById('snakeColorPicker');
             
             // Get audio elements
             const portalSound = document.getElementById('portalSound');
@@ -99,6 +121,7 @@
             let deathAnimation = false;
             let deathAnimationFrames = 0;
             let maxDeathAnimationFrames = 60; // Increased from 20 to 60 for slower animation
+            let snakeColor = snakeColorPicker.value; // Store the current snake color
             
             // Portal variables
             let portals = [];
@@ -134,6 +157,20 @@
             // Minimum length required for splitting
             const minSplitLength = 10;
             
+            // Update snake color when color picker changes
+            snakeColorPicker.addEventListener('change', function() {
+                snakeColor = this.value;
+                if (!gameRunning) {
+                    drawCanvas();
+                    drawSnake();
+                    drawAiSnake();
+                    drawPortals();
+                    drawFood();
+                    drawFriendlySnakes();
+                    drawEnemySnakes();
+                }
+            });
+            
             // Initialize game
             function initGame() {
                 // Reset game state
@@ -150,6 +187,7 @@
                 score = 0;
                 scoreElement.textContent = score;
                 gameRunning = false;
+                snakeColor = snakeColorPicker.value; // Reset snake color to current picker value
                 
                 // Initialize AI snake on the opposite side
                 aiSnake = [
@@ -892,9 +930,11 @@
                 snake.forEach((segment, index) => {
                     // Head is a different color
                     if (index === 0) {
-                        ctx.fillStyle = '#006400'; // Dark green for head
+                        // Make head slightly darker for distinction
+                        const headColor = adjustColor(snakeColor, -20); // Darker variant of selected color
+                        ctx.fillStyle = headColor;
                     } else {
-                        ctx.fillStyle = '#32CD32'; // Light green for body
+                        ctx.fillStyle = snakeColor; // Use selected color for body
                     }
                     
                     ctx.fillRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
@@ -949,6 +989,28 @@
                         ctx.fill();
                     }
                 });
+            }
+            
+            // Helper function to adjust color brightness
+            function adjustColor(color, amount) {
+                // Convert hex to RGB
+                let hex = color;
+                if (hex.startsWith('#')) {
+                    hex = hex.slice(1);
+                }
+                
+                // Convert to RGB
+                let r = parseInt(hex.substring(0, 2), 16);
+                let g = parseInt(hex.substring(2, 4), 16);
+                let b = parseInt(hex.substring(4, 6), 16);
+                
+                // Adjust brightness
+                r = Math.max(0, Math.min(255, r + amount));
+                g = Math.max(0, Math.min(255, g + amount));
+                b = Math.max(0, Math.min(255, b + amount));
+                
+                // Convert back to hex
+                return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
             }
             
             // Draw food
@@ -1460,9 +1522,11 @@
                 friendlySnake.forEach((segment, segIndex) => {
                     // Head is a different color
                     if (segIndex === 0) {
-                        ctx.fillStyle = '#228B22'; // Forest green for head
+                        const headColor = adjustColor(snakeColor, -10); // Slightly darker than player snake
+                        ctx.fillStyle = headColor;
                     } else {
-                        ctx.fillStyle = '#98FB98'; // Pale green for body
+                        const bodyColor = adjustColor(snakeColor, 40); // Lighter than player snake
+                        ctx.fillStyle = bodyColor;
                     }
                     
                     ctx.fillRect(segment.x * boxSize, segment.y * boxSize, boxSize, boxSize);
@@ -1517,6 +1581,17 @@
                         ctx.fill();
                     }
                 });
+            }
+            
+            // Helper function to draw all friendly snakes
+            function drawFriendlySnakes() {
+                for (let i = 0; i < friendlySnakes.length; i++) {
+                    if (!friendlyDeathAnimations[i]) {
+                        drawFriendlySnake(i);
+                    } else {
+                        animateFriendlyDeath(i);
+                    }
+                }
             }
             
             // Draw enemy snake
@@ -1584,6 +1659,17 @@
                         ctx.fill();
                     }
                 });
+            }
+            
+            // Helper function to draw all enemy snakes
+            function drawEnemySnakes() {
+                for (let i = 0; i < enemySnakes.length; i++) {
+                    if (!enemyDeathAnimations[i]) {
+                        drawEnemySnake(i);
+                    } else {
+                        animateEnemyDeath(i);
+                    }
+                }
             }
             
             // Calculate the best direction for a friendly AI
