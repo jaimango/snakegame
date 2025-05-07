@@ -57,6 +57,66 @@
             border: none;
             border-radius: 4px;
         }
+        /* Mobile Controls */
+        .mobile-controls {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            height: 200px;
+            z-index: 1000;
+        }
+        .mobile-controls button {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background-color: rgba(76, 175, 80, 0.7);
+            border: 2px solid white;
+            border-radius: 50%;
+            color: white;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+        .mobile-controls button:active {
+            background-color: rgba(76, 175, 80, 0.9);
+            transform: scale(0.95);
+        }
+        .mobile-controls .up {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .mobile-controls .right {
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%);
+        }
+        .mobile-controls .down {
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .mobile-controls .left {
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+        }
+        @media (max-width: 768px) {
+            .mobile-controls {
+                display: block;
+            }
+            canvas {
+                margin-bottom: 220px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -72,6 +132,14 @@
         <input type="color" id="snakeColorPicker" value="#32CD32">
     </div>
     <p>Use arrow keys to control the snake</p>
+    
+    <!-- Mobile Controls -->
+    <div class="mobile-controls">
+        <button class="up" id="upButton">↑</button>
+        <button class="right" id="rightButton">→</button>
+        <button class="down" id="downButton">↓</button>
+        <button class="left" id="leftButton">←</button>
+    </div>
     
     <!-- Audio elements for sound effects (hidden) -->
     <audio id="portalSound" preload="auto">
@@ -2100,6 +2168,44 @@
             // Event listeners
             startButton.addEventListener('click', startGame);
             resetButton.addEventListener('click', initGame);
+            
+            // Mobile control event listeners
+            const upButton = document.getElementById('upButton');
+            const rightButton = document.getElementById('rightButton');
+            const downButton = document.getElementById('downButton');
+            const leftButton = document.getElementById('leftButton');
+            
+            // Touch events for mobile controls
+            function addMobileControlListeners(button, newDirection) {
+                button.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (direction !== getOppositeDirection(newDirection)) {
+                        direction = newDirection;
+                    }
+                });
+                
+                // Prevent default touch behavior
+                button.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                });
+            }
+            
+            // Helper function to get opposite direction
+            function getOppositeDirection(dir) {
+                const opposites = {
+                    'up': 'down',
+                    'down': 'up',
+                    'left': 'right',
+                    'right': 'left'
+                };
+                return opposites[dir];
+            }
+            
+            // Add listeners to mobile control buttons
+            addMobileControlListeners(upButton, 'up');
+            addMobileControlListeners(rightButton, 'right');
+            addMobileControlListeners(downButton, 'down');
+            addMobileControlListeners(leftButton, 'left');
             
             // Initialize game on load
             initGame();
