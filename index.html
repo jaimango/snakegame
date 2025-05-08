@@ -138,6 +138,9 @@
                 margin: 0;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             }
+            #resetButton {
+                display: none;
+            }
             .score-container {
                 position: fixed;
                 bottom: 240px;
@@ -214,6 +217,9 @@
     <audio id="deathSound" preload="auto">
         <source src="assets/642180__n0iz__horror-scary-eyeball-squeeze-squish.wav" type="audio/wav">
     </audio>
+    <audio id="eatSound" preload="auto">
+        <source src="assets/Apple_Crunch_08.wav" type="audio/wav">
+    </audio>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -227,6 +233,7 @@
             // Get audio elements
             const portalSound = document.getElementById('portalSound');
             const deathSound = document.getElementById('deathSound');
+            const eatSound = document.getElementById('eatSound');
             
             // Function to play sounds
             function playPortalSound() {
@@ -237,6 +244,11 @@
             function playDeathSound() {
                 deathSound.currentTime = 0;
                 deathSound.play();
+            }
+
+            function playEatSound() {
+                eatSound.currentTime = 0;
+                eatSound.play();
             }
             
             // Game settings
@@ -523,6 +535,9 @@
                 
                 // Check if snake eats food
                 if (head.x === food.x && head.y === food.y) {
+                    // Play eat sound
+                    playEatSound();
+                    
                     // Increase score
                     score += 10;
                     scoreElement.textContent = score;
@@ -1238,6 +1253,9 @@
                 
                 // Check if AI snake eats food
                 if (head.x === food.x && head.y === food.y) {
+                    // Play eat sound
+                    playEatSound();
+                    
                     // Increase AI score
                     aiScore += 10;
                     
@@ -1568,6 +1586,9 @@
                 
                 // Check if friendly snake eats food
                 if (head.x === food.x && head.y === food.y) {
+                    // Play eat sound
+                    playEatSound();
+                    
                     // Increase player score (friendly snake helps player)
                     score += 10;
                     scoreElement.textContent = score;
@@ -1644,6 +1665,9 @@
                 
                 // Check if enemy snake eats food
                 if (head.x === food.x && head.y === food.y) {
+                    // Play eat sound
+                    playEatSound();
+                    
                     // Increase AI score
                     aiScore += 10;
                     
