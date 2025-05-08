@@ -149,6 +149,7 @@
                 box-shadow: 0 2px 5px rgba(0,0,0,0.2);
                 color: white;
                 font-size: 20px;
+                transition: opacity 0.3s ease;
             }
             .color-picker-container {
                 position: fixed;
@@ -163,10 +164,15 @@
                 display: flex;
                 align-items: center;
                 gap: 10px;
+                transition: opacity 0.3s ease;
             }
             .color-picker-container label {
                 font-size: 16px;
                 white-space: nowrap;
+            }
+            .hide-during-play {
+                opacity: 0;
+                pointer-events: none;
             }
             h1 {
                 margin-top: 20px;
@@ -306,6 +312,10 @@
                 clearInterval(portalMoveInterval);
                 clearInterval(portalFlashInterval);
                 
+                // Show score and color picker when game is reset
+                document.querySelector('.score-container').classList.remove('hide-during-play');
+                document.querySelector('.color-picker-container').classList.remove('hide-during-play');
+                
                 snake = [
                     {x: 5, y: 10},
                     {x: 4, y: 10},
@@ -367,10 +377,18 @@
                     gameRunning = true;
                     gameInterval = setInterval(gameLoop, gameSpeed);
                     startButton.textContent = 'Pause Game';
+                    
+                    // Hide score and color picker during gameplay
+                    document.querySelector('.score-container').classList.add('hide-during-play');
+                    document.querySelector('.color-picker-container').classList.add('hide-during-play');
                 } else {
                     gameRunning = false;
                     clearInterval(gameInterval);
                     startButton.textContent = 'Resume Game';
+                    
+                    // Show score and color picker when paused
+                    document.querySelector('.score-container').classList.remove('hide-during-play');
+                    document.querySelector('.color-picker-container').classList.remove('hide-during-play');
                 }
             }
             
@@ -2226,7 +2244,10 @@
             }
             
             // Event listeners
-            startButton.addEventListener('click', startGame);
+            startButton.addEventListener('click', () => {
+                initGame();
+                startGame();
+            });
             resetButton.addEventListener('click', initGame);
             
             // Mobile control event listeners
